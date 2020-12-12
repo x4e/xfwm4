@@ -2467,7 +2467,8 @@ clientWithdrawSingle (Client *c, GList *exclude_list, gboolean iconify)
         setWMState (display_info, c->window, IconicState);
         if (!screen_info->show_desktop)
         {
-            clientSetLast (c);
+            // x4e: fix ordering of minimized windows
+            //clientSetLast (c);
         }
     }
     clientSetNetActions (c);

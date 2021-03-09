@@ -16,7 +16,7 @@
         MA 02110-1301, USA.
 
 
-        xfwm4    - (c) 2002-2015 Olivier Fourdan
+        xfwm4    - (c) 2002-2021 Olivier Fourdan
 
  */
 
@@ -32,6 +32,8 @@
 #include <gdk/gdkx.h>
 #include <gtk/gtk.h>
 #include <libxfce4util/libxfce4util.h>
+
+#include <common/xfwm-common.h>
 
 #include "client.h"
 #include "moveresize.h"
@@ -794,6 +796,7 @@ clientUpdateFullscreenState (Client * c)
         c->pre_fullscreen_geometry.height = c->height;
         c->pre_fullscreen_layer = c->win_layer;
         layer = WIN_LAYER_FULLSCREEN;
+        clientUntile (c);
     }
     else
     {
@@ -1171,10 +1174,13 @@ clientSetNetActions (Client * c)
 
     /* Actions available for all */
     atoms[i++] = display_info->atoms[NET_WM_ACTION_CLOSE];
-    atoms[i++] = display_info->atoms[NET_WM_ACTION_ABOVE];
-    atoms[i++] = display_info->atoms[NET_WM_ACTION_BELOW];
 
     /* Actions depending on the window type and current status */
+    if (c->type & WINDOW_REGULAR_FOCUSABLE)
+    {
+        atoms[i++] = display_info->atoms[NET_WM_ACTION_ABOVE];
+        atoms[i++] = display_info->atoms[NET_WM_ACTION_BELOW];
+    }
     if (FLAG_TEST (c->xfwm_flags, XFWM_FLAG_VISIBLE))
     {
         atoms[i++] = display_info->atoms[NET_WM_ACTION_FULLSCREEN];
@@ -1332,6 +1338,14 @@ clientWindowType (Client * c)
                 XFWM_FLAG_HAS_BORDER | XFWM_FLAG_HAS_HIDE |
                 XFWM_FLAG_HAS_MENU | XFWM_FLAG_HAS_MOVE |
                 XFWM_FLAG_HAS_RESIZE);
+            /* Treat SPLASHSCREEN as transient for group to work around
+             * broken apps placing splashscreens above and then complaining
+             * it hides their dialogs, sigh.
+             */
+            if ((c->transient_for == None) || (!clientGetTransient (c)))
+            {
+                c->transient_for = c->screen_info->xroot;
+            }
         }
         else if (c->type_atom == display_info->atoms[NET_WM_WINDOW_TYPE_NOTIFICATION])
         {
@@ -1485,7 +1499,7 @@ ping_timeout_cb (gpointer data)
         TRACE ("ping timeout on client \"%s\"", c->name);
         terminateShowDialog (c);
     }
-    return (FALSE);
+    return FALSE;
 }
 
 void
@@ -1535,13 +1549,19 @@ clientSendNetWMPing (Client *c, guint32 timestamp)
 
     if (!FLAG_TEST (c->wm_flags, WM_FLAG_PING))
     {
-        return (FALSE);
+        return FALSE;
     }
 
     clientRemoveNetWMPing (c);
 
     screen_info = c->screen_info;
     display_info = screen_info->display_info;
+
+    /* Working around GDK bugs (multi-screen has been removed from GDK a while ago) */
+    if (!xfwm_is_default_screen (screen_info->gscr))
+    {
+        return FALSE;
+    }
 
     /* Makes sure the timestamp is meaningfull */
     c->ping_time = myDisplayGetTime (display_info, timestamp);
@@ -1552,7 +1572,7 @@ clientSendNetWMPing (Client *c, guint32 timestamp)
         g_timeout_add_full (G_PRIORITY_DEFAULT,
                             CLIENT_PING_TIMEOUT,
                             ping_timeout_cb, c, NULL);
-    return (TRUE);
+    return TRUE;
 }
 
 gboolean

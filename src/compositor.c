@@ -18,7 +18,7 @@
 
         xcompmgr - (c) 2003 Keith Packard
         metacity - (c) 2003, 2004 Red Hat, Inc.
-        xfwm4    - (c) 2005-2020 Olivier Fourdan
+        xfwm4    - (c) 2005-2021 Olivier Fourdan
 
 */
 
@@ -103,16 +103,20 @@
 #define WIN_IS_SHADED(cw)               (WIN_HAS_CLIENT(cw) && FLAG_TEST (cw->c->flags, CLIENT_FLAG_SHADED))
 
 #ifndef TIMEOUT_REPAINT_PRIORITY
-#define TIMEOUT_REPAINT_PRIORITY   1
+#define TIMEOUT_REPAINT_PRIORITY   G_PRIORITY_DEFAULT
 #endif /* TIMEOUT_REPAINT_PRIORITY */
+
+#ifndef TIMEOUT_THROTTLED_REPAINT_PRIORITY
+#define TIMEOUT_THROTTLED_REPAINT_PRIORITY   G_PRIORITY_LOW
+#endif /* TIMEOUT_THROTTLED_REPAINT_PRIORITY */
 
 #ifndef TIMEOUT_REPAINT_MS
 #define TIMEOUT_REPAINT_MS   1
 #endif /* TIMEOUT_REPAINT_MS */
 
-#ifndef MONITOR_ROOT_PIXMAP
-#define MONITOR_ROOT_PIXMAP   1
-#endif /* MONITOR_ROOT_PIXMAP */
+#ifndef TIMEOUT_THROTTLED_REPAINT_MS
+#define TIMEOUT_THROTTLED_REPAINT_MS   500
+#endif /* TIMEOUT_THROTTLED_REPAINT_MS */
 
 #ifndef MONITOR_ROOT_PIXMAP
 #define MONITOR_ROOT_PIXMAP   1
@@ -230,14 +234,18 @@ is_shaped (DisplayInfo *display_info, Window id)
     int xws, yws, xbs, ybs;
     unsigned wws, hws, wbs, hbs;
     int boundingShaped, clipShaped;
+    int result;
 
     g_return_val_if_fail (display_info != NULL, FALSE);
 
     if (display_info->have_shape)
     {
+        myDisplayErrorTrapPush (display_info);
         XShapeQueryExtents (display_info->dpy, id, &boundingShaped, &xws, &yws, &wws,
                             &hws, &clipShaped, &xbs, &ybs, &wbs, &hbs);
-        return (boundingShaped != 0);
+        result = myDisplayErrorTrapPop (display_info);
+
+        return ((result == Success) && (boundingShaped != 0));
     }
     return FALSE;
 }
@@ -1108,12 +1116,18 @@ check_glx_renderer (ScreenInfo *screen_info)
         "Mesa X11",
         "llvmpipe",
         "SVGA3D",
+        "virgl",
         NULL
     };
 #if HAVE_PRESENT_EXTENSION
     const char *prefer_xpresent[] = {
         "Intel",
-        "AMD",
+        /* Cannot add AMD and Radeon until the fix for
+         * https://gitlab.freedesktop.org/xorg/driver/xf86-video-amdgpu/-/issues/10
+         * is included in a release.
+         */
+        /* "AMD", */
+        /* "Radeon", */
         NULL
     };
 #endif /* HAVE_PRESENT_EXTENSION */
@@ -1138,7 +1152,7 @@ check_glx_renderer (ScreenInfo *screen_info)
             i++;
         if (prefer_xpresent[i])
         {
-            g_message ("Prefer XPresent with %s", glRenderer);
+            g_info ("Prefer XPresent with %s", glRenderer);
             return FALSE;
         }
     }
@@ -1352,6 +1366,8 @@ free_glx_data (ScreenInfo *screen_info)
     display_info = screen_info->display_info;
     myDisplayErrorTrapPush (display_info);
 
+    glXMakeCurrent (myScreenGetXDisplay (screen_info), None, NULL);
+
     if (screen_info->glx_context)
     {
         glXDestroyContext (myScreenGetXDisplay (screen_info), screen_info->glx_context);
@@ -1384,6 +1400,12 @@ init_glx (ScreenInfo *screen_info)
 
     g_return_val_if_fail (screen_info != NULL, FALSE);
     TRACE ("entering");
+
+    if (!xfwm_is_default_screen (screen_info->gscr))
+    {
+        g_warning ("GLX not enabled in multi-screen setups");
+        return FALSE;
+    }
 
     if (!glXQueryExtension (myScreenGetXDisplay (screen_info), &error_base, &event_base))
     {
@@ -1468,7 +1490,9 @@ init_glx (ScreenInfo *screen_info)
     screen_info->has_ext_swap_control =
         epoxy_has_glx_extension (myScreenGetXDisplay (screen_info),
                                  screen_info->screen, "GLX_EXT_swap_control");
-
+    screen_info->has_ext_swap_control_tear =
+        epoxy_has_glx_extension (myScreenGetXDisplay (screen_info),
+                                 screen_info->screen, "GLX_EXT_swap_control_tear");
     /* Sync */
     screen_info->has_ext_arb_sync = epoxy_has_gl_extension ("GL_ARB_sync");
 
@@ -1599,15 +1623,23 @@ fence_destroy (ScreenInfo *screen_info, gushort buffer)
 }
 
 static void
-set_swap_interval (ScreenInfo *screen_info, gushort buffer, int interval)
+set_swap_interval (ScreenInfo *screen_info, gushort buffer)
 {
 #if defined (glXSwapIntervalEXT)
     if (screen_info->has_ext_swap_control)
     {
-        DBG ("Setting swap interval to %d using GLX_EXT_swap_control", interval);
-        glXSwapIntervalEXT (myScreenGetXDisplay (screen_info),
-                            screen_info->glx_drawable[buffer],
-                            interval);
+        if (screen_info->has_ext_swap_control_tear)
+        {
+            DBG ("Setting adaptive vsync using GLX_EXT_swap_control");
+            glXSwapIntervalEXT (myScreenGetXDisplay (screen_info),
+                                screen_info->glx_drawable[buffer], -1);
+        }
+        else
+        {
+            DBG ("Setting swap interval using GLX_EXT_swap_control");
+            glXSwapIntervalEXT (myScreenGetXDisplay (screen_info),
+                                screen_info->glx_drawable[buffer], 1);
+        }
         return;
     }
 #else
@@ -1617,8 +1649,8 @@ set_swap_interval (ScreenInfo *screen_info, gushort buffer, int interval)
 #if defined (glXSwapIntervalMESA)
     if (screen_info->has_mesa_swap_control)
     {
-        DBG ("Setting swap interval to %d using GLX_MESA_swap_control", interval);
-        glXSwapIntervalMESA(interval);
+        DBG ("Setting swap interval using GLX_MESA_swap_control");
+        glXSwapIntervalMESA (1);
         return;
     }
 #else
@@ -1667,7 +1699,7 @@ bind_glx_texture (ScreenInfo *screen_info, gushort buffer)
     if (screen_info->glx_drawable[buffer] == None)
     {
         create_glx_drawable (screen_info, buffer);
-        set_swap_interval (screen_info, buffer, 1);
+        set_swap_interval (screen_info, buffer);
     }
     TRACE ("(re)Binding GLX pixmap 0x%lx to texture 0x%x",
            screen_info->glx_drawable[buffer], screen_info->rootTexture);
@@ -2729,11 +2761,39 @@ repair_screen (ScreenInfo *screen_info)
 static gboolean
 compositor_timeout_cb (gpointer data)
 {
+    static guint number_of_retries = 0;
     ScreenInfo *screen_info;
+    gboolean retry;
 
     screen_info = (ScreenInfo *) data;
-    screen_info->compositor_timeout_id = 0;
-    return repair_screen (screen_info);
+    retry = repair_screen (screen_info);
+
+    if (retry)
+    {
+        if (number_of_retries <= 100)
+        {
+            number_of_retries++;
+        }
+        if (number_of_retries == 100)
+        {
+            DBG ("Throttling repaint after 100 unsuccessful retries");
+            /* Stop the current timeout repain */
+            g_source_remove (screen_info->compositor_timeout_id);
+            retry = FALSE;
+            /* Recreate a throttled timeout instead */
+            screen_info->compositor_timeout_id =
+                g_timeout_add_full (TIMEOUT_THROTTLED_REPAINT_PRIORITY,
+                                    TIMEOUT_THROTTLED_REPAINT_MS,
+                                    compositor_timeout_cb, screen_info, NULL);
+        }
+    }
+    else
+    {
+        screen_info->compositor_timeout_id = 0;
+        number_of_retries = 0;
+    }
+
+    return retry;
 }
 
 static void
@@ -2742,7 +2802,7 @@ add_repair (ScreenInfo *screen_info)
     if (screen_info->compositor_timeout_id == 0)
     {
         screen_info->compositor_timeout_id =
-            g_timeout_add_full (G_PRIORITY_DEFAULT + TIMEOUT_REPAINT_PRIORITY,
+            g_timeout_add_full (TIMEOUT_REPAINT_PRIORITY,
                                 TIMEOUT_REPAINT_MS,
                                 compositor_timeout_cb, screen_info, NULL);
     }
@@ -3271,6 +3331,7 @@ add_win (DisplayInfo *display_info, Window id, Client *c)
         return;
     }
 
+    myDisplayErrorTrapPush (display_info);
     if (c == NULL)
     {
         /* We must be notified of property changes for transparency, even if the win is not managed */
@@ -3282,6 +3343,7 @@ add_win (DisplayInfo *display_info, Window id, Client *c)
     {
         XShapeSelectInput (display_info->dpy, id, ShapeNotifyMask);
     }
+    myDisplayErrorTrapPopIgnored (display_info);
 
     new->c = c;
     new->screen_info = screen_info;
@@ -3294,9 +3356,9 @@ add_win (DisplayInfo *display_info, Window id, Client *c)
 
     if (new->attr.class != InputOnly)
     {
-        myDisplayErrorTrapPush (screen_info->display_info);
+        myDisplayErrorTrapPush (display_info);
         new->damage = XDamageCreate (display_info->dpy, id, XDamageReportNonEmpty);
-        if (myDisplayErrorTrapPop (screen_info->display_info) != Success)
+        if (myDisplayErrorTrapPop (display_info) != Success)
         {
             new->damage = None;
         }
@@ -3772,8 +3834,11 @@ compositorHandlePropertyNotify (DisplayInfo *display_info, XPropertyEvent *ev)
             ScreenInfo *screen_info = myDisplayGetScreenFromRoot (display_info, ev->window);
             if ((screen_info) && (screen_info->compositor_active) && (screen_info->rootTile))
             {
+                myDisplayErrorTrapPush (display_info);
                 XClearArea (display_info->dpy, screen_info->output, 0, 0, 0, 0, TRUE);
                 XRenderFreePicture (display_info->dpy, screen_info->rootTile);
+                myDisplayErrorTrapPopIgnored (display_info);
+
                 screen_info->rootTile = None;
                 damage_screen (screen_info);
 
@@ -4172,9 +4237,6 @@ compositorSetCMSelection (ScreenInfo *screen_info, Window w)
     g_snprintf (selection, sizeof (selection), "_NET_WM_CM_S%d", screen_info->screen);
     a = XInternAtom (display_info->dpy, selection, FALSE);
     setXAtomManagerOwner (display_info, a, screen_info->xroot, w);
-
-    /* Older property "COMPOSITING_MANAGER" */
-    setAtomIdManagerOwner (display_info, COMPOSITING_MANAGER, screen_info->xroot, w);
 }
 
 static Pixmap
@@ -4934,7 +4996,6 @@ compositorUnmanageScreen (ScreenInfo *screen_info)
 #ifdef HAVE_COMPOSITOR
     DisplayInfo *display_info;
     GList *list;
-    gint i;
     gushort buffer;
 
     g_return_if_fail (screen_info != NULL);
@@ -4957,40 +5018,26 @@ compositorUnmanageScreen (ScreenInfo *screen_info)
 
     myDisplayErrorTrapPush (display_info);
 
-    i = 0;
     for (list = screen_info->cwindows; list; list = g_list_next (list))
     {
         CWindow *cw2 = (CWindow *) list->data;
         free_win_data (cw2, TRUE);
-        i++;
     }
 
     g_hash_table_destroy(screen_info->cwindow_hash);
     screen_info->cwindow_hash = NULL;
     g_list_free (screen_info->cwindows);
     screen_info->cwindows = NULL;
-    TRACE ("compositor: removed %i window(s) remaining", i);
-
-#if HAVE_OVERLAYS
-    if (display_info->have_overlays)
-    {
-        XDestroyWindow (display_info->dpy, screen_info->root_overlay);
-        screen_info->root_overlay = None;
-
-        XCompositeReleaseOverlayWindow (display_info->dpy, screen_info->overlay);
-        screen_info->overlay = None;
-    }
-#endif /* HAVE_OVERLAYS */
 
 #ifdef HAVE_EPOXY
     if (screen_info->use_glx)
     {
+        free_glx_data (screen_info);
         for (buffer = 0; buffer < screen_info->use_n_buffers; buffer++)
         {
             destroy_glx_drawable (screen_info, buffer);
         }
     }
-    free_glx_data (screen_info);
 #endif /* HAVE_EPOXY */
 
     for (buffer = 0; buffer < screen_info->use_n_buffers; buffer++)
@@ -5068,6 +5115,17 @@ compositorUnmanageScreen (ScreenInfo *screen_info)
         g_free (screen_info->gaussianMap);
         screen_info->gaussianMap = NULL;
     }
+
+#if HAVE_OVERLAYS
+    if (display_info->have_overlays)
+    {
+        XDestroyWindow (display_info->dpy, screen_info->root_overlay);
+        screen_info->root_overlay = None;
+
+        XCompositeReleaseOverlayWindow (display_info->dpy, screen_info->overlay);
+        screen_info->overlay = None;
+    }
+#endif /* HAVE_OVERLAYS */
 
     screen_info->gaussianSize = -1;
     screen_info->wins_unredirected = 0;

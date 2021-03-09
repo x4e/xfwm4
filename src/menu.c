@@ -48,35 +48,35 @@ enum
 
 static GtkWidget *menu_open = NULL;
 static MenuItem menuitems[] = {
-    {MENU_OP_MAXIMIZE,     N_("Ma_ximize")},
-    {MENU_OP_UNMAXIMIZE,   N_("Unma_ximize")},
-    {MENU_OP_MINIMIZE,     N_("Mi_nimize")},
-    {MENU_OP_MINIMIZE_ALL, N_("Minimize _Other Windows")},
-    {MENU_OP_UNMINIMIZE,   N_("S_how")},
-    {MENU_OP_MOVE,         N_("_Move")},
-    {MENU_OP_RESIZE,       N_("_Resize")},
-    {0, NULL}, /* -------------------------------------------------------- */
-    {MENU_OP_ABOVE,        N_("Always on _Top")},
-    {MENU_OP_NORMAL,       N_("_Same as Other Windows")},
-    {MENU_OP_BELOW,        N_("Always _Below Other Windows")},
-    {MENU_OP_SHADE,        N_("Roll Window Up")},
-    {MENU_OP_UNSHADE,      N_("Roll Window Down")},
-    {MENU_OP_FULLSCREEN,   N_("_Fullscreen")},
-    {MENU_OP_UNFULLSCREEN, N_("Leave _Fullscreen")},
-    {MENU_OP_CONTEXT_HELP, N_("Context _Help")},
-    {0, NULL}, /* -------------------------------------------------------- */
-    {MENU_OP_STICK,        N_("Always on _Visible Workspace")},
-    {MENU_OP_UNSTICK,      N_("Only _Visible on This Workspace")},
-    {MENU_OP_WORKSPACES,   N_("Move to Another _Workspace")},
-    {0, NULL}, /* -------------------------------------------------------- */
-    {MENU_OP_DELETE,       N_("_Close")},
+    {MENU_OP_MAXIMIZE,     MENU_TYPE_REGULAR,  N_("Ma_ximize")},
+    {MENU_OP_UNMAXIMIZE,   MENU_TYPE_REGULAR,  N_("Unma_ximize")},
+    {MENU_OP_MINIMIZE,     MENU_TYPE_REGULAR,  N_("Mi_nimize")},
+    {MENU_OP_MINIMIZE_ALL, MENU_TYPE_REGULAR,  N_("Minimize _Other Windows")},
+    {MENU_OP_UNMINIMIZE,   MENU_TYPE_REGULAR,  N_("S_how")},
+    {MENU_OP_MOVE,         MENU_TYPE_REGULAR,  N_("_Move")},
+    {MENU_OP_RESIZE,       MENU_TYPE_REGULAR,  N_("_Resize")},
+    {0, 0, NULL}, /* ----------------------------------------------*/
+    {MENU_OP_ABOVE,        MENU_TYPE_RADIO,    N_("Always on _Top")},
+    {MENU_OP_NORMAL,       MENU_TYPE_RADIO,    N_("_Same as Other Windows")},
+    {MENU_OP_BELOW,        MENU_TYPE_RADIO,    N_("Always _Below Other Windows")},
+    {0, 0, NULL}, /* ----------------------------------------------*/
+    {MENU_OP_SHADE,        MENU_TYPE_REGULAR,  N_("Roll Window Up")},
+    {MENU_OP_UNSHADE,      MENU_TYPE_REGULAR,  N_("Roll Window Down")},
+    {MENU_OP_FULLSCREEN,   MENU_TYPE_REGULAR,  N_("_Fullscreen")},
+    {MENU_OP_UNFULLSCREEN, MENU_TYPE_REGULAR,  N_("Leave _Fullscreen")},
+    {MENU_OP_CONTEXT_HELP, MENU_TYPE_REGULAR,  N_("Context _Help")},
+    {0, 0, NULL}, /* ----------------------------------------------*/
+    {MENU_OP_STICK,        MENU_TYPE_CHECKBOX, N_("Always on _Visible Workspace")},
+    {MENU_OP_WORKSPACES,   MENU_TYPE_REGULAR,  N_("Move to Another _Workspace")},
+    {0, 0, NULL}, /* ----------------------------------------------*/
+    {MENU_OP_DELETE,       MENU_TYPE_REGULAR,  N_("_Close")},
 #if 0
     {0, NULL, NULL}, /* -------------------------------------------------------- */
     {MENU_OP_DESTROY,      N_("Destroy")},
     {0, NULL, NULL}, /* -------------------------------------------------------- */
 #endif
-    {MENU_OP_QUIT,         N_("_Quit")},
-    {MENU_OP_RESTART,      N_("Restart")},
+    {MENU_OP_QUIT,         MENU_TYPE_REGULAR, N_("_Quit")},
+    {MENU_OP_RESTART,      MENU_TYPE_REGULAR, N_("Restart")},
 };
 
 static eventFilterStatus
@@ -95,52 +95,6 @@ menu_filter (XfwmEvent *event, gpointer data)
     return EVENT_FILTER_CONTINUE;
 }
 
-
-#if !GTK_CHECK_VERSION(3, 22, 0)
-static void
-popup_position_func (GtkMenu * menu, gint * x, gint * y, gboolean * push_in,
-    gpointer user_data)
-{
-    GtkRequisition req;
-    GdkPoint *pos;
-    GdkScreen *screen;
-    gint monitor_num;
-    gint width;
-    gint height;
-
-    pos = user_data;
-
-    gtk_widget_get_preferred_size (GTK_WIDGET (menu), NULL, &req);
-
-    xfwm_get_screen_dimensions (&width, &height);
-
-    if (pos->x >= 0)
-    {
-        *x = pos->x;
-        *x = CLAMP (*x, 0, MAX (0, width - req.width));
-    }
-    else
-    {
-        *x = (width - req.width) / 2;
-    }
-    if (pos->x >= 0)
-    {
-        *y = pos->y;
-        *y = CLAMP (*y, 0, MAX (0, height - req.height));
-    }
-    else
-    {
-        *y = (height - req.height) / 2;
-    }
-
-    screen = gtk_widget_get_screen (GTK_WIDGET (menu));
-    monitor_num = gdk_screen_get_monitor_at_point (screen, *x, *y);
-    gtk_menu_set_monitor (GTK_MENU (menu), monitor_num);
-
-    g_free (user_data);
-}
-#endif
-
 static gboolean
 activate_cb (GtkWidget * menuitem, gpointer data)
 {
@@ -158,7 +112,7 @@ activate_cb (GtkWidget * menuitem, gpointer data)
                              menudata->menu->xid,
                              menudata->menu->data,
                              menudata->data);
-    return (FALSE);
+    return FALSE;
 }
 
 static gboolean
@@ -173,7 +127,7 @@ menu_closed (GtkMenu * widget, gpointer data)
 
     eventFilterPop (menu->filter_setup);
     (*menu->func) (menu, 0, menu->xid, menu->data, NULL);
-    return (FALSE);
+    return FALSE;
 }
 
 static GtkWidget *
@@ -261,7 +215,7 @@ menu_default (GdkScreen *gscr, Window xid, MenuOp ops, MenuOp insensitive, MenuF
     i = 0;
     while (i < (int) (sizeof (menuitems) / sizeof (MenuItem)))
     {
-        if ((ops & menuitems[i].op) || (menuitems[i].op == MENU_OP_SEPARATOR))
+        if ((ops & menuitems[i].op) || (menuitems[i].type != MENU_TYPE_REGULAR))
         {
             label = _(menuitems[i].label);
             ws_menu = NULL;
@@ -281,7 +235,22 @@ menu_default (GdkScreen *gscr, Window xid, MenuOp ops, MenuOp insensitive, MenuF
                     g_signal_connect (G_OBJECT (ws_menu), "selection-done", G_CALLBACK (menu_closed), menu);
                     break;
                 default:
-                    menuitem = gtk_menu_item_new_with_mnemonic (label);
+                    switch (menuitems[i].type)
+                    {
+                        case MENU_TYPE_RADIO:
+                            menuitem = gtk_check_menu_item_new_with_mnemonic (label);
+                            gtk_check_menu_item_set_draw_as_radio (GTK_CHECK_MENU_ITEM (menuitem), TRUE);
+                            /* Set item as checked if it is *not* a valid op. This is because it is already checked and cannot be reselected */
+                            gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (menuitem), !(ops & menuitems[i].op));
+                            break;
+                        case MENU_TYPE_CHECKBOX:
+                            menuitem = gtk_check_menu_item_new_with_mnemonic (label);
+                            /* Set item as checked if it is *not* a valid op. This is because it is already checked and cannot be reselected */
+                            gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (menuitem), !(ops & menuitems[i].op));
+                            break;
+                        default:
+                            menuitem = gtk_menu_item_new_with_mnemonic (label);
+                    }
                     if (insensitive & menuitems[i].op)
                     {
                         gtk_widget_set_sensitive (menuitem, FALSE);
@@ -344,9 +313,9 @@ menu_check_and_close (void)
         TRACE ("emitting deactivate signal");
         g_signal_emit_by_name (G_OBJECT (menu_open), "deactivate");
         menu_open = NULL;
-        return (TRUE);
+        return TRUE;
     }
-    return (FALSE);
+    return FALSE;
 }
 
 static GdkDevice *
@@ -445,7 +414,6 @@ grab_available (GdkWindow *win, guint32 timestamp)
     return (!grab_failed);
 }
 
-#if GTK_CHECK_VERSION(3, 22, 0)
 static GdkEvent *
 menu_popup_event (Menu *menu, gint root_x, gint root_y, guint button, guint32 timestamp,
                   GdkWindow *window)
@@ -481,17 +449,14 @@ menu_popup_event (Menu *menu, gint root_x, gint root_y, guint button, guint32 ti
 
     return event;
 }
-#endif
 
 gboolean
 menu_popup (Menu *menu, gint root_x, gint root_y, guint button, guint32 timestamp)
 {
     GdkPoint *pt;
     GdkWindow *window;
-#if GTK_CHECK_VERSION(3, 22, 0)
     GdkEvent *event;
     GdkRectangle rectangle;
-#endif
 
     g_return_val_if_fail (menu != NULL, FALSE);
     g_return_val_if_fail (GTK_IS_MENU (menu->menu), FALSE);
@@ -515,7 +480,6 @@ menu_popup (Menu *menu, gint root_x, gint root_y, guint button, guint32 timestam
         menu_open = menu->menu;
         eventFilterPush (menu->filter_setup, menu_filter, NULL);
 
-#if GTK_CHECK_VERSION(3, 22, 0)
         rectangle.x = root_x;
         rectangle.y = root_y;
         rectangle.width = 1;
@@ -525,10 +489,6 @@ menu_popup (Menu *menu, gint root_x, gint root_y, guint button, guint32 timestam
         gtk_menu_popup_at_rect (GTK_MENU (menu->menu), window, &rectangle,
                                 GDK_GRAVITY_NORTH_WEST, GDK_GRAVITY_NORTH_WEST, event);
         gdk_event_free (event);
-#else
-        gtk_menu_popup (GTK_MENU (menu->menu), NULL, NULL,
-            popup_position_func, pt, 0, timestamp);
-#endif
 
         if (g_object_get_data (G_OBJECT (menu->menu), "gtk-menu-transfer-window") == NULL)
         {

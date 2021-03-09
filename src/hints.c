@@ -691,9 +691,15 @@ setUTF8StringHint (DisplayInfo *display_info, Window w, int atom_id, const gchar
 void
 getTransientFor (DisplayInfo *display_info, Window root, Window w, Window * transient_for)
 {
+    int result, status;
+
     TRACE ("window 0x%lx", w);
 
-    if (XGetTransientForHint (display_info->dpy, w, transient_for))
+    myDisplayErrorTrapPush (display_info);
+    status = XGetTransientForHint (display_info->dpy, w, transient_for);
+    result = myDisplayErrorTrapPop (display_info);
+
+    if ((result == Success) && status)
     {
         if (*transient_for == None)
         {
@@ -1413,12 +1419,15 @@ getSystrayWindow (DisplayInfo *display_info, Atom net_system_tray_selection)
 
     TRACE ("entering");
 
+    myDisplayErrorTrapPush (display_info);
     systray_win = XGetSelectionOwner (display_info->dpy, net_system_tray_selection);
     if (systray_win)
     {
         XSelectInput (display_info->dpy, systray_win, StructureNotifyMask);
     }
+    myDisplayErrorTrapPopIgnored (display_info);
     TRACE ("new systray window:  0x%lx", systray_win);
+
     return systray_win;
 }
 #endif

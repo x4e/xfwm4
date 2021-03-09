@@ -147,7 +147,7 @@ typeOfClick_end (gpointer data)
 
     gtk_main_quit ();
 
-    return (FALSE);
+    return FALSE;
 }
 
 static eventFilterStatus
@@ -238,11 +238,7 @@ typeOfClick (ScreenInfo *screen_info, Window w, XfwmEventButton *event, gboolean
     if (!g)
     {
         TRACE ("grab failed");
-#if GTK_CHECK_VERSION(3, 22, 0)
         gdk_display_beep (display_info->gdisplay);
-#else
-        gdk_beep ();
-#endif
         myScreenUngrabPointer (screen_info, event->time);
         return XFWM_BUTTON_UNDEFINED;
     }
@@ -999,43 +995,35 @@ handleButtonPress (DisplayInfo *display_info, XfwmEventButton *event)
                 }
             }
         }
-        else if ((win == MYWINDOW_XWINDOW (c->corners[CORNER_TOP_LEFT]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->corners[CORNER_TOP_LEFT]))
         {
             edgeButton (c, CORNER_TOP_LEFT, event);
         }
-        else if ((win == MYWINDOW_XWINDOW (c->corners[CORNER_TOP_RIGHT]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->corners[CORNER_TOP_RIGHT]))
         {
             edgeButton (c, CORNER_TOP_RIGHT, event);
         }
-        else if ((win == MYWINDOW_XWINDOW (c->corners[CORNER_BOTTOM_LEFT]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->corners[CORNER_BOTTOM_LEFT]))
         {
             edgeButton (c, CORNER_BOTTOM_LEFT, event);
         }
-        else if ((win == MYWINDOW_XWINDOW (c->corners[CORNER_BOTTOM_RIGHT]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->corners[CORNER_BOTTOM_RIGHT]))
         {
             edgeButton (c, CORNER_BOTTOM_RIGHT, event);
         }
-        else if ((win == MYWINDOW_XWINDOW (c->sides[SIDE_BOTTOM]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->sides[SIDE_BOTTOM]))
         {
             edgeButton (c, CORNER_COUNT + SIDE_BOTTOM, event);
         }
-        else if ((win == MYWINDOW_XWINDOW (c->sides[SIDE_TOP]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->sides[SIDE_TOP]))
         {
             edgeButton (c, CORNER_COUNT + SIDE_TOP, event);
         }
-        else if ((win == MYWINDOW_XWINDOW (c->sides[SIDE_LEFT]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->sides[SIDE_LEFT]))
         {
             edgeButton (c, CORNER_COUNT + SIDE_LEFT, event);
         }
-        else if ((win == MYWINDOW_XWINDOW (c->sides[SIDE_RIGHT]))
-            && (state == 0))
+        else if (win == MYWINDOW_XWINDOW (c->sides[SIDE_RIGHT]))
         {
             edgeButton (c, CORNER_COUNT + SIDE_RIGHT, event);
         }
@@ -1713,7 +1701,10 @@ handlePropertyNotify (DisplayInfo *display_info, XPropertyEvent * ev)
                 XFree (c->wmhints);
             }
 
+            myDisplayErrorTrapPush (display_info);
             c->wmhints = XGetWMHints (display_info->dpy, c->window);
+            myDisplayErrorTrapPopIgnored (display_info);
+
             if (c->wmhints)
             {
                 if (c->wmhints->flags & WindowGroupHint)
@@ -2397,7 +2388,6 @@ menu_callback (Menu * menu, MenuOp op, Window xid, gpointer menu_data, gpointer 
                 clientToggleShaded (c);
                 break;
             case MENU_OP_STICK:
-            case MENU_OP_UNSTICK:
                 clientToggleSticky (c, TRUE);
                 frameQueueDraw (c, FALSE);
                 break;
@@ -2430,11 +2420,7 @@ menu_callback (Menu * menu, MenuOp op, Window xid, gpointer menu_data, gpointer 
     }
     else
     {
-#if GTK_CHECK_VERSION(3, 22, 0)
         gdk_display_beep (gdk_display_get_default ());
-#else
-        gdk_beep ();
-#endif
     }
     menu_free (menu);
 }
@@ -2472,9 +2458,7 @@ show_window_menu (Client *c, gint px, gint py, guint button, guint32 timestamp, 
     screen_info = c->screen_info;
     display_info = screen_info->display_info;
     is_transient = clientIsValidTransientOrModal (c);
-#if GTK_CHECK_VERSION(3, 22, 0)
     scale = gdk_window_get_scale_factor (gdk_screen_get_root_window (screen_info->gscr));
-#endif
 
     x = px;
     y = py;
@@ -2529,11 +2513,7 @@ show_window_menu (Client *c, gint px, gint py, guint button, guint32 timestamp, 
         ops |= MENU_OP_SHADE;
     }
 
-    if (FLAG_TEST (c->flags, CLIENT_FLAG_STICKY))
-    {
-        ops |= MENU_OP_UNSTICK;
-    }
-    else
+    if (!FLAG_TEST (c->flags, CLIENT_FLAG_STICKY))
     {
         ops |= MENU_OP_STICK;
     }
@@ -2551,7 +2531,7 @@ show_window_menu (Client *c, gint px, gint py, guint button, guint32 timestamp, 
 
     if (is_transient || !FLAG_TEST(c->xfwm_flags, XFWM_FLAG_HAS_STICK))
     {
-        insensitive |= MENU_OP_STICK | MENU_OP_UNSTICK;
+        insensitive |= MENU_OP_STICK;
     }
 
     if (!CLIENT_CAN_HIDE_WINDOW (c))
@@ -2666,11 +2646,7 @@ show_window_menu (Client *c, gint px, gint py, guint button, guint32 timestamp, 
     if (!menu_popup (menu, x, y, button, timestamp))
     {
         TRACE ("cannot open menu");
-#if GTK_CHECK_VERSION(3, 22, 0)
         gdk_display_beep (display_info->gdisplay);
-#else
-        gdk_beep ();
-#endif
         c->button_status[MENU_BUTTON] = BUTTON_STATE_NORMAL;
         frameQueueDraw (c, FALSE);
         xfwmWindowDelete (&menu_event_window);
@@ -2685,7 +2661,7 @@ show_popup_cb (GtkWidget * widget, GdkEventButton * ev, gpointer data)
 
     show_window_menu ((Client *) data, (gint) ev->x_root, (gint) ev->y_root, ev->button, ev->time, FALSE);
 
-    return (TRUE);
+    return TRUE;
 }
 
 static gboolean
@@ -2694,7 +2670,7 @@ set_reload (DisplayInfo *display_info)
     TRACE ("setting reload flag so all prefs will be reread at next event loop");
 
     display_info->reload = TRUE;
-    return (TRUE);
+    return TRUE;
 }
 
 static gboolean
@@ -2712,7 +2688,7 @@ double_click_time_cb (GObject * obj, GdkEvent * ev, gpointer data)
         display_info->double_click_time = abs (g_value_get_int (&tmp_val));
     }
 
-    return (TRUE);
+    return TRUE;
 }
 
 static gboolean
@@ -2730,7 +2706,7 @@ double_click_distance_cb (GObject * obj, GdkEvent * ev, gpointer data)
         display_info->double_click_distance = abs (g_value_get_int (&tmp_val));
     }
 
-    return (TRUE);
+    return TRUE;
 }
 
 static void
@@ -2774,7 +2750,7 @@ refresh_font_cb (GObject * obj, GdkEvent * ev, gpointer data)
         update_screen_font (list->data);
     }
 
-    return (TRUE);
+    return TRUE;
 }
 
 /*

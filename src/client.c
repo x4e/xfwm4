@@ -427,7 +427,7 @@ urgent_cb (gpointer data)
     {
         c->blink_iterations = 0;
     }
-    return (TRUE);
+    return TRUE;
 }
 
 void
@@ -1565,7 +1565,7 @@ update_icon_idle_cb (gpointer data)
     }
     c->icon_timeout_id = 0;
 
-    return (FALSE);
+    return FALSE;
 }
 
 void
@@ -2021,8 +2021,8 @@ clientFrame (DisplayInfo *display_info, Window w, gboolean recapture)
         else
         {
             clientRaise (c, None);
+            clientShow (c, TRUE);
             clientInitFocusFlag (c);
-            clientSetNetActions (c);
         }
     }
     else
@@ -2465,7 +2465,7 @@ clientWithdrawSingle (Client *c, GList *exclude_list, gboolean iconify)
     {
         FLAG_SET (c->flags, CLIENT_FLAG_ICONIFIED);
         setWMState (display_info, c->window, IconicState);
-        if (!screen_info->show_desktop)
+        if (!screen_info->show_desktop && !screen_info->params->cycle_minimized)
         {
             // x4e: fix ordering of minimized windows
             //clientSetLast (c);
@@ -3311,7 +3311,7 @@ clientNewTileSize (Client *c, XWindowChanges *wc, GdkRectangle *rect, tilePositi
                   rect->x + rect->width) - full_x;
     full_h = MIN (screen_info->height - screen_info->params->xfwm_margins[STRUTS_BOTTOM],
                   rect->y + rect->height) - full_y;
-    clientMaxSpace (screen_info, &full_x, &full_y, &full_w, &full_h);
+    clientMaxSpace (c, &full_x, &full_y, &full_w, &full_h);
 
     switch (tile)
     {
@@ -3385,7 +3385,7 @@ clientNewMaxSize (Client *c, XWindowChanges *wc, GdkRectangle *rect)
                   rect->x + rect->width) - full_x;
     full_h = MIN (screen_info->height - screen_info->params->xfwm_margins[STRUTS_BOTTOM],
                   rect->y + rect->height) - full_y;
-    clientMaxSpace (screen_info, &full_x, &full_y, &full_w, &full_h);
+    clientMaxSpace (c, &full_x, &full_y, &full_w, &full_h);
 
     if (FLAG_TEST (c->flags, CLIENT_FLAG_MAXIMIZED_HORIZ))
     {
